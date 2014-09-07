@@ -1,0 +1,60 @@
+<!--
+/*
+ * Copyright 2014 Jeffrey Bosboom.
+ * This file is part of hexcellsbot.
+ *
+ * hexcellsbot is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * hexcellsbot is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with hexcellsbot.  If not, see <http://www.gnu.org/licenses/>.
+ */
+ -->
+
+<project name="hexcellsbot" basedir="." default="jar">
+	<target name="fetch">
+		<mkdir dir="lib"/>
+		<mkdir dir="lib/doc"/>
+		<mkdir dir="lib/src"/>
+
+		<get src="http://search.maven.org/remotecontent?filepath=com/google/guava/guava/18.0/guava-18.0.jar"
+			 dest="lib/guava.jar"
+			 skipexisting="true"/>
+		<get src="http://search.maven.org/remotecontent?filepath=com/google/guava/guava/18.0/guava-18.0-javadoc.jar"
+			 dest="lib/doc/guava-doc.jar"
+			 skipexisting="true"/>
+		<get src="http://search.maven.org/remotecontent?filepath=com/google/guava/guava/18.0/guava-18.0-sources.jar"
+			 dest="lib/src/guava-src.jar"
+			 skipexisting="true"/>
+	</target>
+
+	<target name="clean">
+		<delete dir="build"/>
+	</target>
+
+	<target name="compile">
+		<mkdir dir="build/classes"/>
+		<javac srcdir="src" destdir="build/classes" debug="true" includeantruntime="false">
+			<classpath>
+				<fileset dir="lib">
+					<include name="*.jar"/>
+				</fileset>
+			</classpath>
+		</javac>
+	</target>
+
+	<target name="jar" depends="compile">
+		<mkdir dir="build/jar"/>
+		<jar destfile="build/jar/hexcellsbot.jar" basedir="build/classes">
+		</jar>
+	</target>
+
+	<target name="clean-build" depends="clean,jar"/>
+</project>
