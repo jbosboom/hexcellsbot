@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.IntSummaryStatistics;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -129,28 +130,8 @@ public final class Effector {
 			if (cell.kind() != Cell.Kind.UNKNOWN) {
 				Rectangle exteriorBox = hex.boundingBox();
 				BufferedImage subimage = image.getSubimage(exteriorBox.x, exteriorBox.y, exteriorBox.width, exteriorBox.height);
-				Region cellRegion = Region.connectedComponents(subimage, ImmutableSet.of(HEXAGON_INTERIOR_COLORS.inverse().get(cell.kind()).getRGB()))
-						.stream().sorted(Comparator.comparingInt((Region r_) -> r_.points().size()).reversed()).findFirst().get();
-				Rectangle interiorBox = cellRegion.boundingBox();
-				int constraintMinX = Integer.MAX_VALUE, constraintMaxX = Integer.MIN_VALUE,
-						constraintMinY = Integer.MAX_VALUE, constraintMaxY = Integer.MIN_VALUE;
-				for (int ex = interiorBox.x; ex < interiorBox.x + interiorBox.width; ++ex) {
-					final int ex_ = ex;
-					IntSummaryStatistics rowExtrema = cellRegion.points().stream()
-							.filter(p -> p.x == ex_)
-							.collect(Collectors.summarizingInt(Region.Point::y));
-					for (int ey = rowExtrema.getMin(); ey < rowExtrema.getMax(); ++ey)
-						if (!cellRegion.points().contains(new Region.Point(ex, ey))) {
-							constraintMinX = Math.min(constraintMinX, ex);
-							constraintMaxX = Math.max(constraintMaxX, ex);
-							constraintMinY = Math.min(constraintMinY, ey);
-							constraintMaxY = Math.max(constraintMaxY, ey);
-						}
-				}
-				if (constraintMinX == Integer.MAX_VALUE) continue;
-				subimage = subimage.getSubimage(constraintMinX, constraintMinY,
-						constraintMaxX - constraintMinX + 1, constraintMaxY - constraintMinY + 1);
-				constraintImages.put(coordinate, maskOrInvert(subimage, HEXAGON_INTERIOR_COLORS.inverse().get(cell.kind())));
+				cleanCellConstraintImage(cell, subimage).ifPresent(i -> constraintImages.put(coordinate, i));
+				constraintImages.put(coordinate, subimage);
 			}
 		}
 		Map<Coordinate, Cell> grid = cells.stream().collect(Collectors.toMap(Cell::where, Function.identity()));
@@ -186,6 +167,33 @@ public final class Effector {
 
 	private static BufferedImage subimageCenteredAt(BufferedImage image, int x, int y, int width, int height) {
 		return image.getSubimage(x - width/2, y - height/2, width, height);
+	}
+
+	private static Optional<BufferedImage> cleanCellConstraintImage(Cell cell, BufferedImage subimage) {
+		Color interiorColor = HEXAGON_INTERIOR_COLORS.inverse().get(cell.kind());
+		Region cellRegion = Region.connectedComponents(subimage, ImmutableSet.of(interiorColor.getRGB()))
+				.stream().sorted(Comparator.comparingInt((Region r_) -> r_.points().size()).reversed()).findFirst().get();
+		Rectangle interiorBox = cellRegion.boundingBox();
+		int constraintMinX = Integer.MAX_VALUE, constraintMaxX = Integer.MIN_VALUE,
+				constraintMinY = Integer.MAX_VALUE, constraintMaxY = Integer.MIN_VALUE;
+		for (int ex = interiorBox.x; ex < interiorBox.x + interiorBox.width; ++ex) {
+			final int ex_ = ex;
+			IntSummaryStatistics rowExtrema = cellRegion.points().stream()
+					.filter(p -> p.x == ex_)
+					.collect(Collectors.summarizingInt(Region.Point::y));
+			for (int ey = rowExtrema.getMin(); ey < rowExtrema.getMax(); ++ey)
+				if (!cellRegion.points().contains(new Region.Point(ex, ey))) {
+					constraintMinX = Math.min(constraintMinX, ex);
+					constraintMaxX = Math.max(constraintMaxX, ex);
+					constraintMinY = Math.min(constraintMinY, ey);
+					constraintMaxY = Math.max(constraintMaxY, ey);
+				}
+		}
+		if (constraintMinX == Integer.MAX_VALUE) return Optional.empty();
+		subimage = subimage.getSubimage(constraintMinX, constraintMinY,
+				constraintMaxX - constraintMinX + 1, constraintMaxY - constraintMinY + 1);
+		subimage = maskOrInvert(subimage, interiorColor);
+		return Optional.of(subimage);
 	}
 
 	private static BufferedImage maskOrInvert(BufferedImage image, Color maskToWhite) {
