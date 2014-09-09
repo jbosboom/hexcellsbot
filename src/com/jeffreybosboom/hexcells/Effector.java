@@ -131,7 +131,6 @@ public final class Effector {
 				Rectangle exteriorBox = hex.boundingBox();
 				BufferedImage subimage = image.getSubimage(exteriorBox.x, exteriorBox.y, exteriorBox.width, exteriorBox.height);
 				cleanCellConstraintImage(cell, subimage).ifPresent(i -> constraintImages.put(coordinate, i));
-				constraintImages.put(coordinate, subimage);
 			}
 		}
 		Map<Coordinate, Cell> grid = cells.stream().collect(Collectors.toMap(Cell::where, Function.identity()));
