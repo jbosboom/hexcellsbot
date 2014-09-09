@@ -23,7 +23,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.IntSummaryStatistics;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -39,7 +41,7 @@ import javax.imageio.ImageIO;
 public final class Effector {
 	public Effector() {}
 
-	private static final ImmutableBiMap<Color, Cell.Kind> HEXAGON_COLORS = ImmutableBiMap.of(
+	private static final ImmutableBiMap<Color, Cell.Kind> HEXAGON_BORDER_COLORS = ImmutableBiMap.of(
 			//These are the colors of the hexagon colored borders, not their
 			//centers, as the present hexagons centers are the same color as the
 			//remaining/mistake boxes.
@@ -47,11 +49,16 @@ public final class Effector {
 			new Color(44, 47, 49), Cell.Kind.ABSENT,
 			new Color(20, 156, 216), Cell.Kind.PRESENT
 	);
+	private static final ImmutableBiMap<Color, Cell.Kind> HEXAGON_INTERIOR_COLORS = ImmutableBiMap.of(
+			new Color(255, 175, 41), Cell.Kind.UNKNOWN,
+			new Color(62, 62, 62), Cell.Kind.ABSENT,
+			new Color(5, 164, 235), Cell.Kind.PRESENT
+	);
 	private static final Color REMAINING_BOX = new Color(5, 164, 235); //also the mistake box
 	public static Puzzle fromImage(BufferedImage image) {
 		ImmutableSet<Region> regions = Region.connectedComponents(image, ContiguousSet.create(Range.all(), DiscreteDomain.integers()));
 		List<Region> hexagons = regions.stream()
-				.filter(r -> HEXAGON_COLORS.containsKey(r.color()))
+				.filter(r -> HEXAGON_BORDER_COLORS.containsKey(r.color()))
 				.collect(Collectors.toList());
 		int hexWidth = (int)Math.round(hexagons.stream()
 				.mapToInt(r -> r.boundingBox().width)
@@ -116,13 +123,35 @@ public final class Effector {
 			int x = q, z = r/2 - (q + (evenQ ? q & 1 : -(q&1)))/2, y = -x - z;
 			Coordinate coordinate = Coordinate.at(x, y, z);
 //			System.out.println(coordinate);
-			Cell cell = new Cell(coordinate, HEXAGON_COLORS.get(hex.color()), hex.centroid());
+			Cell cell = new Cell(coordinate, HEXAGON_BORDER_COLORS.get(hex.color()), hex.centroid());
 			cells.add(cell);
 
-			Rectangle boundingBox = hex.boundingBox();
-			if (cell.kind() != Cell.Kind.UNKNOWN)
-				constraintImages.put(coordinate, image.getSubimage(
-						boundingBox.x, boundingBox.y, boundingBox.width, boundingBox.height));
+			Rectangle exteriorBox = hex.boundingBox();
+			if (cell.kind() != Cell.Kind.UNKNOWN) {
+				BufferedImage subimage = image.getSubimage(exteriorBox.x, exteriorBox.y, exteriorBox.width, exteriorBox.height);
+				Region cellRegion = Region.connectedComponents(subimage, ImmutableSet.of(HEXAGON_INTERIOR_COLORS.inverse().get(cell.kind()).getRGB()))
+						.stream().sorted(Comparator.comparingInt((Region r_) -> r_.points().size()).reversed()).findFirst().get();
+				Rectangle interiorBox = cellRegion.boundingBox();
+				int constraintMinX = Integer.MAX_VALUE, constraintMaxX = Integer.MIN_VALUE,
+						constraintMinY = Integer.MAX_VALUE, constraintMaxY = Integer.MIN_VALUE;
+				for (int ex = interiorBox.x; ex < interiorBox.x + interiorBox.width; ++ex) {
+					final int ex_ = ex;
+					IntSummaryStatistics rowExtrema = cellRegion.points().stream()
+							.filter(p -> p.x == ex_)
+							.collect(Collectors.summarizingInt(Region.Point::y));
+					for (int ey = rowExtrema.getMin(); ey < rowExtrema.getMax(); ++ey)
+						if (!cellRegion.points().contains(new Region.Point(ex, ey))) {
+							constraintMinX = Math.min(constraintMinX, ex);
+							constraintMaxX = Math.max(constraintMaxX, ex);
+							constraintMinY = Math.min(constraintMinY, ey);
+							constraintMaxY = Math.max(constraintMaxY, ey);
+						}
+				}
+				if (constraintMinX == Integer.MAX_VALUE) continue;
+				subimage = subimage.getSubimage(constraintMinX, constraintMinY,
+						constraintMaxX - constraintMinX + 1, constraintMaxY - constraintMinY + 1);
+				constraintImages.put(coordinate, maskOrInvert(subimage, HEXAGON_INTERIOR_COLORS.inverse().get(cell.kind())));
+			}
 		}
 		Map<Coordinate, Cell> grid = cells.stream().collect(Collectors.toMap(Cell::where, Function.identity()));
 
@@ -157,6 +186,18 @@ public final class Effector {
 
 	private static BufferedImage subimageCenteredAt(BufferedImage image, int x, int y, int width, int height) {
 		return image.getSubimage(x - width/2, y - height/2, width, height);
+	}
+
+	private static BufferedImage maskOrInvert(BufferedImage image, Color maskToWhite) {
+		for (int x = 0; x < image.getWidth(); ++x)
+			for (int y = 0; y < image.getHeight(); ++y) {
+				int rgb = image.getRGB(x, y);
+				if (rgb == maskToWhite.getRGB())
+					image.setRGB(x, y, Color.WHITE.getRGB());
+				else
+					image.setRGB(x, y, ~rgb | (255 << 24));
+			}
+		return image;
 	}
 
 	public static void main(String[] args) throws Throwable {
