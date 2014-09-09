@@ -126,8 +126,8 @@ public final class Effector {
 			Cell cell = new Cell(coordinate, HEXAGON_BORDER_COLORS.get(hex.color()), hex.centroid());
 			cells.add(cell);
 
-			Rectangle exteriorBox = hex.boundingBox();
 			if (cell.kind() != Cell.Kind.UNKNOWN) {
+				Rectangle exteriorBox = hex.boundingBox();
 				BufferedImage subimage = image.getSubimage(exteriorBox.x, exteriorBox.y, exteriorBox.width, exteriorBox.height);
 				Region cellRegion = Region.connectedComponents(subimage, ImmutableSet.of(HEXAGON_INTERIOR_COLORS.inverse().get(cell.kind()).getRGB()))
 						.stream().sorted(Comparator.comparingInt((Region r_) -> r_.points().size()).reversed()).findFirst().get();
