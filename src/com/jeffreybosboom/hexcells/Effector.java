@@ -10,6 +10,7 @@ import com.google.common.collect.TreeRangeSet;
 import com.google.common.hash.Hashing;
 import com.google.common.hash.HashingOutputStream;
 import java.awt.Color;
+import java.awt.Graphics;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
@@ -127,24 +128,28 @@ public final class Effector {
 			Cell cell = new Cell(coordinate, HEXAGON_BORDER_COLORS.get(hex.color()), hex.centroid());
 			cells.add(cell);
 
+			Rectangle exteriorBox = hex.boundingBox();
 			if (cell.kind() != Cell.Kind.UNKNOWN) {
-				Rectangle exteriorBox = hex.boundingBox();
 				BufferedImage subimage = image.getSubimage(exteriorBox.x, exteriorBox.y, exteriorBox.width, exteriorBox.height);
 				cleanCellConstraintImage(cell, subimage).ifPresent(i -> constraintImages.put(coordinate, i));
 			}
+			//help out board-edge constraint parsing
+			for (int i = exteriorBox.x; i < exteriorBox.x + exteriorBox.width; ++i)
+				for (int j = exteriorBox.y; j < exteriorBox.y + exteriorBox.height; ++j)
+					image.setRGB(i, j, Color.WHITE.getRGB());
 		}
 		Map<Coordinate, Cell> grid = cells.stream().collect(Collectors.toMap(Cell::where, Function.identity()));
 
 		for (Cell c : cells) {
 			if (!grid.containsKey(c.where().up()))
-				constraintImages.put(c.where().up(), subimageCenteredAt(image,
-						c.pixelCentroid().x, c.pixelCentroid().y - hexHeight, hexWidth, hexHeight));
+				cleanBoardEdgeConstraintImage(subimageCenteredAt(image, c.pixelCentroid().x, c.pixelCentroid().y - hexHeight, hexWidth, hexHeight))
+						.ifPresent(i -> constraintImages.put(c.where().up(), i));
 			if (!grid.containsKey(c.where().upRight()))
-				constraintImages.put(c.where().upRight(), subimageCenteredAt(image,
-						c.pixelCentroid().x + hexWidth, c.pixelCentroid().y - hexHeight/2, hexWidth, hexHeight));
+				cleanBoardEdgeConstraintImage(subimageCenteredAt(image, c.pixelCentroid().x + hexWidth, c.pixelCentroid().y - hexHeight/2, hexWidth, hexHeight))
+						.ifPresent(i -> constraintImages.put(c.where().upRight(), i));
 			if (!grid.containsKey(c.where().upLeft()))
-				constraintImages.put(c.where().upLeft(), subimageCenteredAt(image,
-						c.pixelCentroid().x - hexWidth, c.pixelCentroid().y - hexHeight/2, hexWidth, hexHeight));
+				cleanBoardEdgeConstraintImage(subimageCenteredAt(image, c.pixelCentroid().x - hexWidth, c.pixelCentroid().y - hexHeight/2, hexWidth, hexHeight))
+						.ifPresent(i -> constraintImages.put(c.where().upLeft(), i));
 		}
 
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -166,6 +171,50 @@ public final class Effector {
 
 	private static BufferedImage subimageCenteredAt(BufferedImage image, int x, int y, int width, int height) {
 		return image.getSubimage(x - width/2, y - height/2, width, height);
+	}
+
+	private static Optional<BufferedImage> cleanBoardEdgeConstraintImage(BufferedImage subimage) {
+		int nonWhiteMinX = Integer.MAX_VALUE, nonWhiteMinY = Integer.MAX_VALUE;
+		for (int x = 0; x < subimage.getWidth(); ++x)
+			for (int y = 0; y < subimage.getHeight(); ++y) {
+				Color rgb = new Color(subimage.getRGB(x, y));
+				if (rgb.getRed() != rgb.getGreen() ||
+						rgb.getRed() != rgb.getBlue() ||
+						rgb.getGreen() != rgb.getBlue() ||
+						rgb.getRed() >= 220)
+					subimage.setRGB(x, y, Color.WHITE.getRGB());
+				else {
+					nonWhiteMinX = Math.min(nonWhiteMinX, x);
+					nonWhiteMinY = Math.min(nonWhiteMinY, y);
+				}
+			}
+		if (nonWhiteMinX == Integer.MAX_VALUE) return Optional.empty();
+
+		int nonWhiteMaxX = nonWhiteMinX, nonWhiteMaxY = nonWhiteMinY;
+		outer: while (nonWhiteMaxX < subimage.getWidth()) {
+			for (int y = 0; y < subimage.getHeight(); ++y)
+				if (subimage.getRGB(nonWhiteMaxX, y) != Color.WHITE.getRGB()) {
+					++nonWhiteMaxX;
+					continue outer;
+				}
+			break;
+		}
+		outer: while (nonWhiteMaxY < subimage.getHeight()) {
+			for (int x = 0; x < subimage.getWidth(); ++x)
+				if (subimage.getRGB(x, nonWhiteMaxY) != Color.WHITE.getRGB()) {
+					++nonWhiteMaxY;
+					continue outer;
+				}
+			break;
+		}
+		subimage = subimage.getSubimage(nonWhiteMinX, nonWhiteMinY,
+				nonWhiteMaxX - nonWhiteMinX, nonWhiteMaxY - nonWhiteMinY);
+
+		for (int x = 0; x < subimage.getWidth(); ++x)
+			for (int y = 0; y < subimage.getHeight(); ++y)
+				if (new Color(subimage.getRGB(x, y)).getRed() <= 70)
+					return Optional.of(subimage);
+		return Optional.empty();
 	}
 
 	private static Optional<BufferedImage> cleanCellConstraintImage(Cell cell, BufferedImage subimage) {
@@ -192,7 +241,7 @@ public final class Effector {
 		subimage = subimage.getSubimage(constraintMinX, constraintMinY,
 				constraintMaxX - constraintMinX + 1, constraintMaxY - constraintMinY + 1);
 		subimage = maskOrInvert(subimage, interiorColor);
-		return Optional.of(subimage);
+		return Optional.of(copyImage(subimage));
 	}
 
 	private static BufferedImage maskOrInvert(BufferedImage image, Color maskToWhite) {
@@ -205,6 +254,15 @@ public final class Effector {
 					image.setRGB(x, y, ~rgb | (255 << 24));
 			}
 		return image;
+	}
+
+	//https://stackoverflow.com/a/19327237/3614835
+	private static BufferedImage copyImage(BufferedImage source) {
+		BufferedImage b = new BufferedImage(source.getWidth(), source.getHeight(), source.getType());
+		Graphics g = b.getGraphics();
+		g.drawImage(source, 0, 0, null);
+		g.dispose();
+		return b;
 	}
 
 	public static void main(String[] args) throws Throwable {
