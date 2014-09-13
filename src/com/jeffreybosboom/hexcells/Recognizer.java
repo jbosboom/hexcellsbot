@@ -48,6 +48,7 @@ public final class Recognizer {
 		}
 	}
 
+	private static final int WHITE = Color.WHITE.getRGB();
 	private final ImmutableMap<BufferedImage, Result> references;
 	public Recognizer() {
 		ImmutableMap.Builder<BufferedImage, Result> builder = ImmutableMap.builder();
@@ -111,7 +112,7 @@ public final class Recognizer {
 			for (int y = 0; y < image.getHeight(); ++y) {
 				int rgb = image.getRGB(x, y);
 				if (rgb == maskToWhite.getRGB())
-					image.setRGB(x, y, Color.WHITE.getRGB());
+					image.setRGB(x, y, WHITE);
 				else
 					image.setRGB(x, y, ~rgb | (255 << 24));
 			}
@@ -142,7 +143,7 @@ public final class Recognizer {
 						rgb.getRed() != rgb.getBlue() ||
 						rgb.getGreen() != rgb.getBlue() ||
 						rgb.getRed() >= 220)
-					subimage.setRGB(x, y, Color.WHITE.getRGB());
+					subimage.setRGB(x, y, WHITE);
 				else {
 					nonWhiteMinX = Math.min(nonWhiteMinX, x);
 					nonWhiteMinY = Math.min(nonWhiteMinY, y);
@@ -153,7 +154,7 @@ public final class Recognizer {
 		int nonWhiteMaxX = nonWhiteMinX, nonWhiteMaxY = nonWhiteMinY;
 		outer: while (nonWhiteMaxX < subimage.getWidth()) {
 			for (int y = 0; y < subimage.getHeight(); ++y)
-				if (subimage.getRGB(nonWhiteMaxX, y) != Color.WHITE.getRGB()) {
+				if (subimage.getRGB(nonWhiteMaxX, y) != WHITE) {
 					++nonWhiteMaxX;
 					continue outer;
 				}
@@ -161,7 +162,7 @@ public final class Recognizer {
 		}
 		outer: while (nonWhiteMaxY < subimage.getHeight()) {
 			for (int x = 0; x < subimage.getWidth(); ++x)
-				if (subimage.getRGB(x, nonWhiteMaxY) != Color.WHITE.getRGB()) {
+				if (subimage.getRGB(x, nonWhiteMaxY) != WHITE) {
 					++nonWhiteMaxY;
 					continue outer;
 				}
@@ -201,7 +202,7 @@ public final class Recognizer {
 		if (a.getWidth() == b.getWidth() && a.getHeight() == b.getHeight()) {
 			for (int x = 0; x < a.getWidth(); ++x)
 				for (int y = 0; y < a.getHeight(); ++y)
-					score += (a.getRGB(x, y) != Color.WHITE.getRGB()) == (b.getRGB(x, y) != Color.WHITE.getRGB())
+					score += (a.getRGB(x, y) != WHITE) == (b.getRGB(x, y) != WHITE)
 							? 1 : -2;
 		} else {
 			//Try each a-sized subimage of b, penalizing for the size difference.
