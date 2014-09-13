@@ -14,23 +14,19 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.Robot;
+import java.awt.event.InputEvent;
 import java.awt.image.BufferedImage;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.function.Function;
 import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
-import javax.imageio.ImageIO;
 
 /**
  *
@@ -43,18 +39,8 @@ public final class Effector {
 	private final Rectangle hexcellsRect;
 	public Effector() throws AWTException, InterruptedException, IOException {
 		this.robot = new Robot();
+		robot.setAutoDelay(100);
 		this.hexcellsRect = locateHexcells();
-		Puzzle p = fromImage(capture());
-		p.constraints().forEachOrdered(System.out::println);
-	}
-
-	private BufferedImage capture() {
-		BufferedImage capture = robot.createScreenCapture(hexcellsRect);
-		Graphics2D g = capture.createGraphics();
-		g.setColor(Color.WHITE);
-		g.fillRect(0, 0, 32, 32); //cover up hexcells icon lest we think it's a hex
-		g.dispose();
-		return capture;
 	}
 
 	private static Rectangle locateHexcells() throws InterruptedException, IOException {
@@ -77,7 +63,7 @@ public final class Effector {
 	}
 
 	//<editor-fold defaultstate="collapsed" desc="Image parsing">
-	private Puzzle fromImage(BufferedImage image) {
+	private Pair<Puzzle, Map<Coordinate, Region.Point>> fromImage(BufferedImage image) {
 		ImmutableSet<Region> regions = Region.connectedComponents(image, ContiguousSet.create(Range.all(), DiscreteDomain.integers()));
 		List<Region> hexagons = regions.stream()
 				.filter(r -> Colors.HEXAGON_BORDER_COLORS.containsKey(r.color()))
@@ -134,8 +120,9 @@ public final class Effector {
 				.mapToInt(h -> cols.indexOf(colRanges.rangeContaining(h.centroid().x())))
 				.iterator().nextInt();
 		boolean evenQ = (topMostCol & 1) != 0; //yes, this seems backwards.
-		List<Cell> cells = new ArrayList<>(hexagons.size());
-		Map<Coordinate, Recognizer.Result> constraintImages = new HashMap<>();
+		Map<Coordinate, CellState> cells = new LinkedHashMap<>();
+		Map<Coordinate, Region.Point> hexCenters = new LinkedHashMap<>();
+		Map<Coordinate, Recognizer.Result> constraintImages = new LinkedHashMap<>();
 		for (Region hex : hexagons) {
 			int q = cols.indexOf(colRanges.rangeContaining(hex.centroid().x()));
 			int r = rows.indexOf(rowRanges.rangeContaining(hex.centroid().y()));
@@ -145,13 +132,14 @@ public final class Effector {
 			int x = q, z = r/2 - (q + (evenQ ? q & 1 : -(q&1)))/2, y = -x - z;
 			Coordinate coordinate = Coordinate.at(x, y, z);
 //			System.out.println(coordinate);
-			Cell cell = new Cell(coordinate, Colors.HEXAGON_BORDER_COLORS.get(hex.color()), hex.centroid());
-			cells.add(cell);
+			CellState state = Colors.HEXAGON_BORDER_COLORS.get(hex.color());
+			cells.put(coordinate, state);
+			hexCenters.put(coordinate, hex.centroid());
 
 			Rectangle exteriorBox = hex.boundingBox();
-			if (cell.kind() != Cell.Kind.UNKNOWN) {
+			if (state != CellState.UNKNOWN) {
 				BufferedImage subimage = image.getSubimage(exteriorBox.x, exteriorBox.y, exteriorBox.width, exteriorBox.height);
-				recognizer.recognizeCell(subimage, cell.kind())
+				recognizer.recognizeCell(subimage, state)
 						.ifPresent(i -> constraintImages.put(coordinate, i));
 			}
 			//help out board-edge constraint parsing
@@ -159,36 +147,34 @@ public final class Effector {
 				for (int j = exteriorBox.y; j < exteriorBox.y + exteriorBox.height; ++j)
 					image.setRGB(i, j, Color.WHITE.getRGB());
 		}
-		Map<Coordinate, Cell> grid = cells.stream().collect(Collectors.toMap(Cell::where, Function.identity()));
 
-		for (Cell c : cells) {
-			if (!grid.containsKey(c.where().up()))
-				recognizer.recognizeBoardEdge(subimageCenteredAt(image, c.pixelCentroid().x, c.pixelCentroid().y - hexHeight, hexWidth, hexHeight))
+		for (Coordinate c : cells.keySet()) {
+			if (!cells.containsKey(c.up()))
+				recognizer.recognizeBoardEdge(subimageCenteredAt(image, hexCenters.get(c).x, hexCenters.get(c).y - hexHeight, hexWidth, hexHeight))
 						.map(i -> i.pos == ConstraintPosition.TOP ? i : null)
-						.ifPresent(i -> constraintImages.put(c.where().up(), i));
-			if (!grid.containsKey(c.where().upRight()))
-				recognizer.recognizeBoardEdge(subimageCenteredAt(image, c.pixelCentroid().x + hexWidth, c.pixelCentroid().y - hexHeight/2, hexWidth, hexHeight))
+						.ifPresent(i -> constraintImages.put(c.up(), i));
+			if (!cells.containsKey(c.upRight()))
+				recognizer.recognizeBoardEdge(subimageCenteredAt(image, hexCenters.get(c).x + hexWidth, hexCenters.get(c).y - hexHeight/2, hexWidth, hexHeight))
 						.map(i -> i.pos == ConstraintPosition.LEFT ? i : null)
-						.ifPresent(i -> constraintImages.put(c.where().upRight(), i));
-			if (!grid.containsKey(c.where().upLeft()))
-				recognizer.recognizeBoardEdge(subimageCenteredAt(image, c.pixelCentroid().x - hexWidth, c.pixelCentroid().y - hexHeight/2, hexWidth, hexHeight))
+						.ifPresent(i -> constraintImages.put(c.upRight(), i));
+			if (!cells.containsKey(c.upLeft()))
+				recognizer.recognizeBoardEdge(subimageCenteredAt(image, hexCenters.get(c).x - hexWidth, hexCenters.get(c).y - hexHeight/2, hexWidth, hexHeight))
 						.map(i -> i.pos == ConstraintPosition.RIGHT ? i : null)
-						.ifPresent(i -> constraintImages.put(c.where().upLeft(), i));
+						.ifPresent(i -> constraintImages.put(c.upLeft(), i));
 		}
 
 		ImmutableSet.Builder<Constraint> constraints = ImmutableSet.builder();
 		for (Map.Entry<Coordinate, Recognizer.Result> e : constraintImages.entrySet())
-			constraints.add(makeConstraint(e.getKey(), e.getValue(), grid));
+			constraints.add(makeConstraint(e.getKey(), e.getValue(), cells));
 
-		return new Puzzle(grid, constraints.build());
+		return new Pair<>(new Puzzle(cells, constraints.build()), hexCenters);
 	}
 
-	private static Constraint makeConstraint(Coordinate c, Recognizer.Result result, Map<Coordinate, Cell> grid) {
-		List<Cell> region;
+	private static Constraint makeConstraint(Coordinate c, Recognizer.Result result, Map<Coordinate, CellState> grid) {
+		List<Coordinate> region;
 		if (grid.containsKey(c))
 			region = c.neighbors()
-					.map(grid::get)
-					.filter(Objects::nonNull)
+					.filter(grid::containsKey)
 					.collect(Collectors.toList());
 		else {
 			ToIntFunction<Coordinate> axisExtractor;
@@ -201,7 +187,7 @@ public final class Effector {
 			region = grid.keySet().stream()
 					.filter(x -> axisExtractor.applyAsInt(x) == axisExtractor.applyAsInt(c))
 					.sorted(Comparator.comparingInt(axisExtractor))
-					.map(grid::get)
+					.filter(grid::containsKey)
 					.collect(Collectors.toList());
 		}
 		return new Constraint(region, result.number, result.kind == ConstraintKind.CONNECTED, result.kind == ConstraintKind.DISCONNECTED);
@@ -212,7 +198,52 @@ public final class Effector {
 	}
 	//</editor-fold>
 
+	public boolean playPuzzle() {
+		while (true) {
+			Pair<Puzzle, Map<Coordinate, Region.Point>> p = fromImage(capture());
+			Map<Coordinate, Region.Point> hexCenters = p.second;
+			Puzzle p1 = p.first;
+			p1.constraints().forEachOrdered(System.out::println);
+			Puzzle p2 = Deducer.deduce(p1);
+			List<Coordinate> deductions = p2.cells()
+					.filter(c -> p2.isKnown(c) && p1.isUnknown(c))
+					.collect(Collectors.toList());
+			for (Coordinate c : deductions)
+				if (p2.isPresent(c))
+					leftClick(hexCenters.get(c));
+				else if (p2.isAbsent(c))
+					rightClick(hexCenters.get(c));
+
+			if (deductions.isEmpty())
+				return false;
+			if (p2.isSolved())
+				return true;
+		}
+	}
+
+	private BufferedImage capture() {
+		BufferedImage capture = robot.createScreenCapture(hexcellsRect);
+		Graphics2D g = capture.createGraphics();
+		g.setColor(Color.WHITE);
+		g.fillRect(0, 0, 32, 32); //cover up hexcells icon lest we think it's a hex
+		g.dispose();
+		return capture;
+	}
+
+	private void leftClick(Region.Point p) {
+		robot.mouseMove(p.x + hexcellsRect.x, p.y + hexcellsRect.y);
+		robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
+		robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
+	}
+
+	private void rightClick(Region.Point p) {
+		robot.mouseMove(p.x + hexcellsRect.x, p.y + hexcellsRect.y);
+		robot.mousePress(InputEvent.BUTTON3_DOWN_MASK);
+		robot.mouseRelease(InputEvent.BUTTON3_DOWN_MASK);
+	}
+
 	public static void main(String[] args) throws Throwable {
 		Effector e = new Effector();
+		System.out.println(e.playPuzzle());
 	}
 }

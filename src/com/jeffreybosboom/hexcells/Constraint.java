@@ -10,19 +10,19 @@ import java.util.List;
  * @since 9/13/2014
  */
 public class Constraint {
-	private final ImmutableList<Cell> region;
+	private final ImmutableList<Coordinate> region;
 	private final int target;
 	private final boolean contiguous, discontiguous;
-	public Constraint(List<Cell> region, int target, boolean contiguous, boolean discontiguous) {
+	public Constraint(List<Coordinate> region, int target, boolean contiguous, boolean discontiguous) {
 		checkArgument(!(contiguous && discontiguous));
-		checkArgument(target > -1 && target <= region.size());
+		checkArgument(target > -1 && target <= region.size(), "%s %s", target, region);
 		this.region = ImmutableList.copyOf(region);
 		this.target = target;
 		this.contiguous = contiguous;
 		this.discontiguous = discontiguous;
 	}
 
-	public ImmutableList<Cell> region() {
+	public ImmutableList<Coordinate> region() {
 		return region;
 	}
 

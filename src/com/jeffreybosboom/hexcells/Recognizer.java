@@ -112,14 +112,14 @@ public final class Recognizer {
 		this.references = builder.build();
 	}
 
-	public Optional<Result> recognizeCell(BufferedImage image, Cell.Kind cellKind) {
+	public Optional<Result> recognizeCell(BufferedImage image, CellState cellKind) {
 		return cleanCellConstraintImage(cellKind, image).map(cleaned ->
 				compare(cleaned, references.entrySet().stream()
 						.filter(e -> e.getValue().pos == ConstraintPosition.TOP)
 						.filter(e -> e.getValue().number <= 6).iterator()));
 	}
 
-	private static Optional<ImageData> cleanCellConstraintImage(Cell.Kind cellKind, BufferedImage subimage) {
+	private static Optional<ImageData> cleanCellConstraintImage(CellState cellKind, BufferedImage subimage) {
 		Color interiorColor = Colors.HEXAGON_INTERIOR_COLORS.inverse().get(cellKind);
 		Region cellRegion = Region.connectedComponents(subimage, ImmutableSet.of(interiorColor.getRGB()))
 				.stream().sorted(Comparator.comparingInt((Region r_) -> r_.points().size()).reversed()).findFirst().get();
