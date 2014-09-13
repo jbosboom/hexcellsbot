@@ -2,37 +2,34 @@ package com.jeffreybosboom.hexcells;
 
 import com.google.common.collect.ContiguousSet;
 import com.google.common.collect.DiscreteDomain;
-import com.google.common.collect.ImmutableBiMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Range;
 import com.google.common.collect.RangeSet;
 import com.google.common.collect.TreeRangeSet;
-import com.google.common.hash.Hashing;
-import com.google.common.hash.HashingOutputStream;
+import com.google.common.io.CharStreams;
+import com.jeffreybosboom.hexcells.Recognizer.Result.ConstraintKind;
+import com.jeffreybosboom.hexcells.Recognizer.Result.ConstraintPosition;
+import java.awt.AWTException;
 import java.awt.Color;
-import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.Rectangle;
+import java.awt.Robot;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.io.OutputStream;
-import java.io.UncheckedIOException;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.IntSummaryStatistics;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.Objects;
 import java.util.function.Function;
+import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import javax.imageio.ImageIO;
 
 /**
@@ -41,10 +38,46 @@ import javax.imageio.ImageIO;
  * @since 9/7/2014
  */
 public final class Effector {
-	private static final Recognizer recognizer = new Recognizer();
-	public Effector() {}
+	private final Robot robot;
+	private final Recognizer recognizer = new Recognizer();
+	private final Rectangle hexcellsRect;
+	public Effector() throws AWTException, InterruptedException, IOException {
+		this.robot = new Robot();
+		this.hexcellsRect = locateHexcells();
+		Puzzle p = fromImage(capture());
+		p.constraints().forEachOrdered(System.out::println);
+	}
 
-	public static Puzzle fromImage(BufferedImage image) {
+	private BufferedImage capture() {
+		BufferedImage capture = robot.createScreenCapture(hexcellsRect);
+		Graphics2D g = capture.createGraphics();
+		g.setColor(Color.WHITE);
+		g.fillRect(0, 0, 32, 32); //cover up hexcells icon lest we think it's a hex
+		g.dispose();
+		return capture;
+	}
+
+	private static Rectangle locateHexcells() throws InterruptedException, IOException {
+		ProcessBuilder pb = new ProcessBuilder("cmdow.exe Hexcells /B /P".split(" "));
+		Process p = pb.start();
+		p.waitFor();
+		Reader r = new InputStreamReader(p.getInputStream());
+		List<String> readLines = CharStreams.readLines(r);
+		if (readLines.size() != 1)
+			throw new RuntimeException(readLines.toString());
+		String[] fields = readLines.get(0).trim().split("\\h+");
+		System.out.println(Arrays.toString(fields));
+		//These include window decorations, whose size varies by computer, but
+		//they shouldn't affect our parsing.
+		int windowLeft = Integer.parseInt(fields[fields.length-6]);
+		int windowTop = Integer.parseInt(fields[fields.length-5]);
+		int windowWidth = Integer.parseInt(fields[fields.length-4]);
+		int windowHeight = Integer.parseInt(fields[fields.length-3]);
+		return new Rectangle(windowLeft, windowTop, windowWidth, windowHeight);
+	}
+
+	//<editor-fold defaultstate="collapsed" desc="Image parsing">
+	private Puzzle fromImage(BufferedImage image) {
 		ImmutableSet<Region> regions = Region.connectedComponents(image, ContiguousSet.create(Range.all(), DiscreteDomain.integers()));
 		List<Region> hexagons = regions.stream()
 				.filter(r -> Colors.HEXAGON_BORDER_COLORS.containsKey(r.color()))
@@ -102,7 +135,7 @@ public final class Effector {
 				.iterator().nextInt();
 		boolean evenQ = (topMostCol & 1) != 0; //yes, this seems backwards.
 		List<Cell> cells = new ArrayList<>(hexagons.size());
-		Map<Coordinate, Recognizer.Result> constraints = new HashMap<>();
+		Map<Coordinate, Recognizer.Result> constraintImages = new HashMap<>();
 		for (Region hex : hexagons) {
 			int q = cols.indexOf(colRanges.rangeContaining(hex.centroid().x()));
 			int r = rows.indexOf(rowRanges.rangeContaining(hex.centroid().y()));
@@ -119,7 +152,7 @@ public final class Effector {
 			if (cell.kind() != Cell.Kind.UNKNOWN) {
 				BufferedImage subimage = image.getSubimage(exteriorBox.x, exteriorBox.y, exteriorBox.width, exteriorBox.height);
 				recognizer.recognizeCell(subimage, cell.kind())
-						.ifPresent(i -> constraints.put(coordinate, i));
+						.ifPresent(i -> constraintImages.put(coordinate, i));
 			}
 			//help out board-edge constraint parsing
 			for (int i = exteriorBox.x; i < exteriorBox.x + exteriorBox.width; ++i)
@@ -131,32 +164,55 @@ public final class Effector {
 		for (Cell c : cells) {
 			if (!grid.containsKey(c.where().up()))
 				recognizer.recognizeBoardEdge(subimageCenteredAt(image, c.pixelCentroid().x, c.pixelCentroid().y - hexHeight, hexWidth, hexHeight))
-						.ifPresent(i -> constraints.put(c.where().up(), i));
+						.map(i -> i.pos == ConstraintPosition.TOP ? i : null)
+						.ifPresent(i -> constraintImages.put(c.where().up(), i));
 			if (!grid.containsKey(c.where().upRight()))
 				recognizer.recognizeBoardEdge(subimageCenteredAt(image, c.pixelCentroid().x + hexWidth, c.pixelCentroid().y - hexHeight/2, hexWidth, hexHeight))
-						.ifPresent(i -> constraints.put(c.where().upRight(), i));
+						.map(i -> i.pos == ConstraintPosition.LEFT ? i : null)
+						.ifPresent(i -> constraintImages.put(c.where().upRight(), i));
 			if (!grid.containsKey(c.where().upLeft()))
 				recognizer.recognizeBoardEdge(subimageCenteredAt(image, c.pixelCentroid().x - hexWidth, c.pixelCentroid().y - hexHeight/2, hexWidth, hexHeight))
-						.ifPresent(i -> constraints.put(c.where().upLeft(), i));
+						.map(i -> i.pos == ConstraintPosition.RIGHT ? i : null)
+						.ifPresent(i -> constraintImages.put(c.where().upLeft(), i));
 		}
-		System.out.println(constraints);
 
-		return null;
+		ImmutableSet.Builder<Constraint> constraints = ImmutableSet.builder();
+		for (Map.Entry<Coordinate, Recognizer.Result> e : constraintImages.entrySet())
+			constraints.add(makeConstraint(e.getKey(), e.getValue(), grid));
+
+		return new Puzzle(grid, constraints.build());
+	}
+
+	private static Constraint makeConstraint(Coordinate c, Recognizer.Result result, Map<Coordinate, Cell> grid) {
+		List<Cell> region;
+		if (grid.containsKey(c))
+			region = c.neighbors()
+					.map(grid::get)
+					.filter(Objects::nonNull)
+					.collect(Collectors.toList());
+		else {
+			ToIntFunction<Coordinate> axisExtractor;
+			if (result.pos == ConstraintPosition.TOP)
+				axisExtractor = Coordinate::x;
+			else if (result.pos == ConstraintPosition.RIGHT)
+				axisExtractor = Coordinate::y;
+			else
+				axisExtractor = Coordinate::z;
+			region = grid.keySet().stream()
+					.filter(x -> axisExtractor.applyAsInt(x) == axisExtractor.applyAsInt(c))
+					.sorted(Comparator.comparingInt(axisExtractor))
+					.map(grid::get)
+					.collect(Collectors.toList());
+		}
+		return new Constraint(region, result.number, result.kind == ConstraintKind.CONNECTED, result.kind == ConstraintKind.DISCONNECTED);
 	}
 
 	private static BufferedImage subimageCenteredAt(BufferedImage image, int x, int y, int width, int height) {
 		return image.getSubimage(x - width/2, y - height/2, width, height);
 	}
+	//</editor-fold>
 
 	public static void main(String[] args) throws Throwable {
-		BufferedImage image = ImageIO.read(new File("Hexcells Plus 2014-05-10 22-49-38-58.bmp"));
-		fromImage(image);
-//		BufferedImage image = ImageIO.read(new File("Hexcells Plus 2014-05-11 00-51-47-56.bmp"));
-//		try (DirectoryStream<Path> files = Files.newDirectoryStream(Paths.get("."), "*.bmp")) {
-//			for (Path p : files) {
-//				System.out.println(p);
-//				fromImage(ImageIO.read(p.toFile()));
-//			}
-//		}
+		Effector e = new Effector();
 	}
 }

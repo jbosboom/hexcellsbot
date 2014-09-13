@@ -1,5 +1,8 @@
 package com.jeffreybosboom.hexcells;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
+
 /**
  *
  * @author Jeffrey Bosboom <jbosboom@csail.mit.edu>
@@ -28,6 +31,12 @@ public final class Cell {
 
 	public Region.Point pixelCentroid() {
 		return pixelCentroid;
+	}
+
+	public Cell refine(Kind kind) {
+		checkState(kind() == Kind.UNKNOWN);
+		checkArgument(kind != Kind.UNKNOWN);
+		return new Cell(where(), kind, pixelCentroid());
 	}
 
 	@Override
