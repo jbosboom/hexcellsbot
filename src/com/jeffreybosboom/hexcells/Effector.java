@@ -231,13 +231,17 @@ public final class Effector {
 	}
 
 	private void leftClick(Region.Point p) {
-		robot.mouseMove(p.x + hexcellsRect.x, p.y + hexcellsRect.y);
+		int x = p.x + hexcellsRect.x, y = p.y + hexcellsRect.y;
+		if (!hexcellsRect.contains(x, y)) throw new RuntimeException();
+		robot.mouseMove(x, y);
 		robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
 		robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
 	}
 
 	private void rightClick(Region.Point p) {
-		robot.mouseMove(p.x + hexcellsRect.x, p.y + hexcellsRect.y);
+		int x = p.x + hexcellsRect.x, y = p.y + hexcellsRect.y;
+		if (!hexcellsRect.contains(x, y)) throw new RuntimeException();
+		robot.mouseMove(x, y);
 		robot.mousePress(InputEvent.BUTTON3_DOWN_MASK);
 		robot.mouseRelease(InputEvent.BUTTON3_DOWN_MASK);
 	}
