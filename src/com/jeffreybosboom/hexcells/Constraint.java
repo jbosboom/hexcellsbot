@@ -40,6 +40,10 @@ public class Constraint {
 
 	@Override
 	public String toString() {
+		if (isDiscontiguous())
+			return String.format("-%d-: %s", target(), region());
+		if (isContiguous())
+			return String.format("{%d}: %s", target(), region());
 		return String.format("%d: %s", target(), region());
 	}
 }
