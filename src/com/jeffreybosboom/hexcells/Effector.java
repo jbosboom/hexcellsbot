@@ -64,7 +64,8 @@ public final class Effector {
 
 	//<editor-fold defaultstate="collapsed" desc="Image parsing">
 	private Pair<Puzzle, Map<Coordinate, Region.Point>> fromImage(BufferedImage image) {
-		ImmutableSet<Region> regions = Region.connectedComponents(image, ContiguousSet.create(Range.all(), DiscreteDomain.integers()));
+		ImmutableSet<Region> regions = Region.connectedComponents(image,
+				Colors.HEXAGON_BORDER_COLORS.keySet().stream().map(Color::getRGB).collect(Collectors.toSet()));
 		List<Region> hexagons = regions.stream()
 				.filter(r -> Colors.HEXAGON_BORDER_COLORS.containsKey(r.color()))
 				.collect(Collectors.toList());
