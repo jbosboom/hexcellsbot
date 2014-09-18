@@ -7,6 +7,7 @@ import com.google.common.collect.Range;
 import com.google.common.collect.RangeSet;
 import com.google.common.collect.TreeRangeSet;
 import com.google.common.io.CharStreams;
+import com.google.common.util.concurrent.Uninterruptibles;
 import com.jeffreybosboom.hexcells.Recognizer.Result.ConstraintKind;
 import com.jeffreybosboom.hexcells.Recognizer.Result.ConstraintPosition;
 import java.awt.AWTException;
@@ -25,6 +26,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
 
@@ -223,6 +225,8 @@ public final class Effector {
 				return false;
 			if (p2.isSolved())
 				return true;
+			//wait for particle effects to clear
+			Uninterruptibles.sleepUninterruptibly(3, TimeUnit.SECONDS);
 		}
 	}
 
