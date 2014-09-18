@@ -172,11 +172,15 @@ public final class Effector {
 	}
 
 	private static Constraint makeConstraint(Coordinate c, Recognizer.Result result, Map<Coordinate, CellState> grid) {
-		List<Coordinate> region;
-		if (grid.containsKey(c))
-			region = c.neighbors()
+		int target = result.number;
+		boolean contiguous = result.kind == ConstraintKind.CONNECTED,
+				discontiguous = result.kind == ConstraintKind.DISCONNECTED;
+		if (grid.containsKey(c)) {
+			List<Coordinate> region = c.neighbors()
 					.filter(grid::containsKey)
 					.collect(Collectors.toList());
+			return new CellConstraint(c, region, target, contiguous, discontiguous);
+		}
 		else {
 			ToIntFunction<Coordinate> axisExtractor;
 			if (result.pos == ConstraintPosition.TOP)
@@ -185,13 +189,13 @@ public final class Effector {
 				axisExtractor = Coordinate::y;
 			else
 				axisExtractor = Coordinate::z;
-			region = grid.keySet().stream()
+			List<Coordinate> region = grid.keySet().stream()
 					.filter(x -> axisExtractor.applyAsInt(x) == axisExtractor.applyAsInt(c))
 					.sorted(Comparator.comparingInt(axisExtractor))
 					.filter(grid::containsKey)
 					.collect(Collectors.toList());
+			return new AxisConstraint(axisExtractor, region, target, contiguous, discontiguous);
 		}
-		return new Constraint(region, result.number, result.kind == ConstraintKind.CONNECTED, result.kind == ConstraintKind.DISCONNECTED);
 	}
 
 	private static BufferedImage subimageCenteredAt(BufferedImage image, int x, int y, int width, int height) {

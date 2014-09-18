@@ -13,6 +13,7 @@ public final class Deducer {
 
 	private static final Function<Puzzle, Puzzle> RULES = fixpoint(Function.<Puzzle>identity()
 			.andThen(fixpoint(new BasicRule()))
+			.andThen(fixpoint(new SubsetChecking()))
 	);
 
 	public static Puzzle deduce(Puzzle puzzle) {
