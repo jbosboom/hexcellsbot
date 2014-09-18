@@ -184,19 +184,23 @@ public final class Effector {
 			return new CellConstraint(c, region, target, contiguous, discontiguous);
 		}
 		else {
-			ToIntFunction<Coordinate> axisExtractor;
-			if (result.pos == ConstraintPosition.TOP)
+			ToIntFunction<Coordinate> axisExtractor, offAxisExtractor;
+			if (result.pos == ConstraintPosition.TOP) {
 				axisExtractor = Coordinate::x;
-			else if (result.pos == ConstraintPosition.RIGHT)
+				offAxisExtractor = Coordinate::z;
+			} else if (result.pos == ConstraintPosition.RIGHT) {
 				axisExtractor = Coordinate::y;
-			else
+				offAxisExtractor = Coordinate::z;
+			} else {
 				axisExtractor = Coordinate::z;
+				offAxisExtractor = Coordinate::x;
+			}
 			List<Coordinate> region = grid.keySet().stream()
 					.filter(x -> axisExtractor.applyAsInt(x) == axisExtractor.applyAsInt(c))
-					.sorted(Comparator.comparingInt(axisExtractor))
+					.sorted(Comparator.comparingInt(offAxisExtractor))
 					.filter(grid::containsKey)
 					.collect(Collectors.toList());
-			return new AxisConstraint(axisExtractor, region, target, contiguous, discontiguous);
+			return new AxisConstraint(axisExtractor, offAxisExtractor, region, target, contiguous, discontiguous);
 		}
 	}
 

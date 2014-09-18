@@ -10,12 +10,19 @@ import java.util.function.ToIntFunction;
  */
 public class AxisConstraint extends Constraint {
 	private final ToIntFunction<Coordinate> axisExtractor;
-	public AxisConstraint(ToIntFunction<Coordinate> axisExtractor, List<Coordinate> region, int target, boolean contiguous, boolean discontiguous) {
+	private final ToIntFunction<Coordinate> sortAxisExtractor;
+	public AxisConstraint(ToIntFunction<Coordinate> axisExtractor, ToIntFunction<Coordinate> sortAxisExtractor,
+			List<Coordinate> region, int target, boolean contiguous, boolean discontiguous) {
 		super(region, target, contiguous, discontiguous);
 		this.axisExtractor = axisExtractor;
+		this.sortAxisExtractor = sortAxisExtractor;
 	}
 
 	public ToIntFunction<Coordinate> axisExtractor() {
 		return axisExtractor;
+	}
+
+	public ToIntFunction<Coordinate> sortAxisExtractor() {
+		return sortAxisExtractor;
 	}
 }
